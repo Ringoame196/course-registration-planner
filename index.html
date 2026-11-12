@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>履修計画シミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 1px;
+            background-color: #e2e8f0;
+            border: 1px solid #e2e8f0;
+        }
+        .calendar-cell {
+            background-color: white;
+            min-height: 120px;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            transition: all 0.2s ease-in-out;
+        }
+        .calendar-cell:hover {
+            background-color: #f8fafc;
+        }
+        .date-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        .task-badge {
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.25rem;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border-left-width: 4px;
+            line-height: 1.2;
+        }
+        .event-badge {
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-weight: 700;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .bg-start { background-color: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
+        .bg-dl1 { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+        .bg-dl2 { background-color: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+        .bg-dl3 { background-color: #fdf2f8; color: #be185d; border: 1px solid #f9a8d4; }
+
+        /* 授業別カラー定義 (A~Hなどの視覚識別用) */
+        .course-color-0 { background-color: #eff6ff; color: #1d4ed8; border-left-color: #2563eb; }
+        .course-color-1 { background-color: #f0fdf4; color: #15803d; border-left-color: #16a34a; }
+        .course-color-2 { background-color: #fefce8; color: #a16207; border-left-color: #ca8a04; }
+        .course-color-3 { background-color: #faf5ff; color: #7e22ce; border-left-color: #9333ea; }
+        .course-color-4 { background-color: #fff1f2; color: #be123c; border-left-color: #e11d48; }
+        .course-color-5 { background-color: #ecfeff; color: #0e7490; border-left-color: #0891b2; }
+        .course-color-6 { background-color: #fdf4ff; color: #a21caf; border-left-color: #c026d3; }
+        .course-color-7 { background-color: #f5f5f4; color: #44403c; border-left-color: #57534e; }
+
+        /* 印刷用スタイルと今日のハイライト */
+        @media print {
+            body { background-color: white !important; padding: 0 !important; }
+            .max-w-7xl { max-width: 100% !important; margin: 0 !important; gap: 0 !important; }
+            /* 設定パネルや不要なボタンを隠す */
+            .lg\:col-span-4, header { display: none !important; }
+            /* カレンダーを全幅にする */
+            .lg\:col-span-8 { grid-column: span 12 !important; }
+            .calendar-cell { break-inside: avoid; border: 1px solid #cbd5e1; }
+            .calendar-grid { gap: 0; border: none; }
+            .task-badge, .event-badge { box-shadow: none !important; border: 1px solid #e2e8f0; }
+            /* 印刷時はスクロールやシャドウを無効化 */
+            * { box-shadow: none !important; }
+        }
+        
+        .today-highlight { background-color: #fefce8 !important; outline: 2px solid #fbbf24; outline-offset: -2px; }
+
+        /* ナンバー入力のスピンボタン（スライド時の潰れ防止） */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="p-3 md:p-6 lg:p-8">
+
+<div class="max-w-7xl mx-auto space-y-6">
+    
+    <!-- ヘッダー -->
+    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-2">
+                <span>🎓 履修・学習シミュレーター</span>
+            </div>
+            <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">履修計画シミュレーター</h1>
+            <p class="text-sm text-slate-500 mt-1">レポート締切（各＋5コマ）に合わせて、曜日別ペースで計画を最適化できます。</p>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- 左側：設定パネル (4列) -->
+        <div class="lg:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 mb-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+                    <span>⚙️ 条件設定</span>
+                    <button type="button" onclick="resetDefaults()" class="text-xs font-medium text-blue-600 hover:underline">初期値に戻す</button>
+                </h2>
+                
+                <form id="simulatorForm" class="space-y-5">
+                    <!-- 授業数 -->
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">履修する授業数</label>
+                        <div class="flex items-center gap-3">
+                            <input type="number" id="courseCount" min="1" max="15" value="4" class="w-24 bg-white border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-2 text-center font-bold text-slate-800 text-base">
+                            <div class="text-xs text-slate-500 leading-tight">
+                                全 <span id="totalClassesCount" class="font-bold text-blue-600">60</span> コマ（全15回/授業）<br>
+                                締切毎に各授業 <span class="font-semibold text-slate-700">+5コマ</span> 必要
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 日程設定 -->
+                    <div class="space-y-2.5">
+                        <label class="block text-xs font-bold text-slate-700">📅 スケジュール設定</label>
+                        
+                        <div class="grid grid-cols-1 gap-2 text-xs">
+                            <div class="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                <span class="font-semibold text-slate-600 pl-1">開始日</span>
+                                <input type="date" id="startDate" required class="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 font-medium focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center justify-between bg-red-50/50 p-2 rounded-lg border border-red-100">
+                                <span class="font-semibold text-red-700 pl-1">締切 1</span>
+                                <input type="date" id="dl1" required class="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 font-medium focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center justify-between bg-orange-50/50 p-2 rounded-lg border border-orange-100">
+                                <span class="font-semibold text-orange-700 pl-1">締切 2</span>
+                                <input type="date" id="dl2" required class="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 font-medium focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center justify-between bg-pink-50/50 p-2 rounded-lg border border-pink-100">
+                                <span class="font-semibold text-pink-700 pl-1">締切 3</span>
+                                <input type="date" id="dl3" required class="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 font-medium focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 曜日別学習ペース -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-xs font-bold text-slate-700">⏱️ 1日のコマ数（日〜土）</label>
+                        </div>
+
+                        <!-- プリセットボタン -->
+                        <div class="flex gap-1.5 mb-2.5">
+                            <button type="button" onclick="setPreset([0,2,2,2,2,2,4])" class="flex-1 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition">標準</button>
+                            <button type="button" onclick="setPreset([0,0,0,0,0,6,6])" class="flex-1 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition">土日</button>
+                            <button type="button" onclick="setPreset([0,3,3,3,3,3,0])" class="flex-1 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition">平日</button>
+                        </div>
+
+                        <!-- 7曜日を入力しやすい1行横並びレイアウトに固定（幅狭でも潰れないよう最適化） -->
+                        <div class="grid grid-cols-7 gap-1">
+                            <div class="bg-red-50 py-1.5 px-0.5 rounded-lg border border-red-100 text-center">
+                                <span class="block text-[11px] font-bold text-red-600 mb-0.5 select-none">日</span>
+                                <input type="number" id="cap0" min="0" value="0" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-slate-50 py-1.5 px-0.5 rounded-lg border border-slate-200 text-center">
+                                <span class="block text-[11px] font-bold text-slate-600 mb-0.5 select-none">月</span>
+                                <input type="number" id="cap1" min="0" value="2" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-slate-50 py-1.5 px-0.5 rounded-lg border border-slate-200 text-center">
+                                <span class="block text-[11px] font-bold text-slate-600 mb-0.5 select-none">火</span>
+                                <input type="number" id="cap2" min="0" value="2" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-slate-50 py-1.5 px-0.5 rounded-lg border border-slate-200 text-center">
+                                <span class="block text-[11px] font-bold text-slate-600 mb-0.5 select-none">水</span>
+                                <input type="number" id="cap3" min="0" value="2" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-slate-50 py-1.5 px-0.5 rounded-lg border border-slate-200 text-center">
+                                <span class="block text-[11px] font-bold text-slate-600 mb-0.5 select-none">木</span>
+                                <input type="number" id="cap4" min="0" value="2" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-slate-50 py-1.5 px-0.5 rounded-lg border border-slate-200 text-center">
+                                <span class="block text-[11px] font-bold text-slate-600 mb-0.5 select-none">金</span>
+                                <input type="number" id="cap5" min="0" value="2" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                            <div class="bg-blue-50 py-1.5 px-0.5 rounded-lg border border-blue-100 text-center">
+                                <span class="block text-[11px] font-bold text-blue-600 mb-0.5 select-none">土</span>
+                                <input type="number" id="cap6" min="0" value="4" inputmode="numeric" class="w-full bg-white border border-slate-300 rounded py-1 px-0 text-center font-bold text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md shadow-blue-500/20 flex items-center justify-center gap-2">
+                        <span>⚡ シミュレーションを実行</span>
+                    </button>
+                </form>
+            </div>
+            
+            <!-- 凡例 -->
+            <div id="courseLegend" class="mt-6 pt-4 border-t border-slate-100 hidden">
+                <span class="block text-xs font-bold text-slate-500 mb-2">授業凡例</span>
+                <div id="legendContainer" class="flex flex-wrap gap-1.5"></div>
+            </div>
+        </div>
+
+        <!-- 右側：結果表示 & カレンダー (8列) -->
+        <div class="lg:col-span-8 space-y-4">
+            
+            <!-- メッセージ & サマリーエリア -->
+            <div id="summaryCards" class="grid grid-cols-1 md:grid-cols-3 gap-3 hidden">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-lg text-xl font-bold">📚</div>
+                    <div>
+                        <div class="text-xs text-slate-500 font-medium">総コマ数</div>
+                        <div id="statTotal" class="text-lg font-extrabold text-slate-800">60 コマ</div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                    <div class="p-3 bg-emerald-50 text-emerald-600 rounded-lg text-xl font-bold">🗓️</div>
+                    <div>
+                        <div class="text-xs text-slate-500 font-medium">1週間あたり</div>
+                        <div id="statWeekly" class="text-lg font-extrabold text-slate-800">14 コマ</div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                    <div id="statStatusIcon" class="p-3 bg-indigo-50 text-indigo-600 rounded-lg text-xl font-bold">✨</div>
+                    <div>
+                        <div class="text-xs text-slate-500 font-medium">判定結果</div>
+                        <div id="statStatusText" class="text-base font-extrabold text-slate-800">達成可能</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="resultMessage" class="hidden p-4 rounded-xl shadow-sm border text-sm font-medium transition-all"></div>
+            
+            <!-- カレンダー本体 -->
+            <div id="calendarContainer" class="space-y-6">
+                <div class="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center text-slate-400">
+                    <div class="text-4xl mb-3">📅</div>
+                    <p class="font-bold text-slate-600 text-base">まだシミュレーションが実行されていません</p>
+                    <p class="text-xs text-slate-400 mt-1">条件を設定して「シミュレーションを実行」ボタンを押してください。</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    // 授業数の変化に連動して総コマ数をリアルタイム更新
+    document.getElementById('courseCount').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value) || 0;
+        document.getElementById('totalClassesCount').textContent = val * 15;
+    });
+
+    function saveSettings() {
+        const settings = {
+            courseCount: document.getElementById('courseCount').value,
+            startDate: document.getElementById('startDate').value,
+            dl1: document.getElementById('dl1').value,
+            dl2: document.getElementById('dl2').value,
+            dl3: document.getElementById('dl3').value,
+            caps: [0,1,2,3,4,5,6].map(i => document.getElementById(`cap${i}`).value)
+        };
+        localStorage.setItem('studyPlannerSettings', JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+        const saved = localStorage.getItem('studyPlannerSettings');
+        if (saved) {
+            try {
+                const settings = JSON.parse(saved);
+                if(settings.courseCount) {
+                    document.getElementById('courseCount').value = settings.courseCount;
+                    document.getElementById('totalClassesCount').textContent = settings.courseCount * 15;
+                }
+                if(settings.startDate) document.getElementById('startDate').value = settings.startDate;
+                if(settings.dl1) document.getElementById('dl1').value = settings.dl1;
+                if(settings.dl2) document.getElementById('dl2').value = settings.dl2;
+                if(settings.dl3) document.getElementById('dl3').value = settings.dl3;
+                if(settings.caps && settings.caps.length === 7) {
+                    settings.caps.forEach((cap, i) => {
+                        document.getElementById(`cap${i}`).value = cap;
+                    });
+                }
+                return true;
+            } catch(e) { return false; }
+        }
+        return false;
+    }
+
+    function setPreset(caps) {
+        for (let i = 0; i < 7; i++) {
+            document.getElementById(`cap${i}`).value = caps[i];
+        }
+    }
+
+    function resetDefaults() {
+        document.getElementById('courseCount').value = 4;
+        document.getElementById('totalClassesCount').textContent = 60;
+        setPreset([0, 2, 2, 2, 2, 2, 4]);
+        
+        const today = new Date();
+        document.getElementById('startDate').value = formatDateInput(today);
+        
+        const d1 = new Date(today); d1.setDate(d1.getDate() + 28);
+        document.getElementById('dl1').value = formatDateInput(d1);
+        
+        const d2 = new Date(today); d2.setDate(d2.getDate() + 56);
+        document.getElementById('dl2').value = formatDateInput(d2);
+        
+        const d3 = new Date(today); d3.setDate(d3.getDate() + 84);
+        document.getElementById('dl3').value = formatDateInput(d3);
+
+        saveSettings();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        if(!loadSettings()) {
+            resetDefaults();
+        }
+        runSimulation(); // 初期描画
+    });
+
+    function formatDateInput(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function parseDateStr(dateStr) {
+        const parts = dateStr.split('-');
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    document.getElementById('simulatorForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        saveSettings();
+        runSimulation();
+    });
+
+    // フォームの入力が変わったら自動保存
+    document.getElementById('simulatorForm').addEventListener('change', function(e) {
+        saveSettings();
+    });
+
+    function runSimulation() {
+        const courseCount = parseInt(document.getElementById('courseCount').value) || 0;
+        
+        const startDate = parseDateStr(document.getElementById('startDate').value);
+        const dl1 = parseDateStr(document.getElementById('dl1').value);
+        const dl2 = parseDateStr(document.getElementById('dl2').value);
+        const dl3 = parseDateStr(document.getElementById('dl3').value);
+
+        const capacities = [
+            parseInt(document.getElementById('cap0').value) || 0,
+            parseInt(document.getElementById('cap1').value) || 0,
+            parseInt(document.getElementById('cap2').value) || 0,
+            parseInt(document.getElementById('cap3').value) || 0,
+            parseInt(document.getElementById('cap4').value) || 0,
+            parseInt(document.getElementById('cap5').value) || 0,
+            parseInt(document.getElementById('cap6').value) || 0
+        ];
+
+        const weeklyCapacity = capacities.reduce((a, b) => a + b, 0);
+
+        const msgBox = document.getElementById('resultMessage');
+        const container = document.getElementById('calendarContainer');
+        const summaryCards = document.getElementById('summaryCards');
+        
+        container.innerHTML = '';
+        msgBox.classList.add('hidden');
+
+        if (weeklyCapacity === 0) {
+            showMsg(msgBox, "⚠️ <b>エラー:</b> 1週間の進行コマ数が0です。曜日別のコマ数を設定してください。", 'error');
+            return;
+        }
+
+        // 日付順序チェック
+        if (!(startDate <= dl1 && dl1 < dl2 && dl2 < dl3)) {
+            showMsg(msgBox, "⚠️ <b>エラー:</b> 日付の順序が正しくありません。（開始日 ≦ 締切1 ＜ 締切2 ＜ 締切3）", 'error');
+            return;
+        }
+
+        const schedule = {};
+        let errors = [];
+        
+        const courseNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+        
+        // 授業タスク作成
+        const generateTasks = (startRound, endRound) => {
+            const tasks = [];
+            for (let round = startRound; round <= endRound; round++) {
+                for (let c = 0; c < courseCount; c++) {
+                    const cName = courseNames[c % 26] + (c >= 26 ? Math.floor(c/26) : '');
+                    tasks.push({ name: cName, round: round, courseIdx: c % 8 });
+                }
+            }
+            return tasks;
+        };
+        
+        const missedDeadlines = { dl1: false, dl2: false, dl3: false };
+        const delayedCounts = { dl1: 0, dl2: 0, dl3: 0 };
+        
+        // すべてのタスクを1つの配列にまとめ、それぞれの締切情報を付与
+        const allTasks = [];
+        generateTasks(1, 5).forEach(t => allTasks.push({...t, deadline: dl1, dlName: 'dl1'}));
+        generateTasks(6, 10).forEach(t => allTasks.push({...t, deadline: dl2, dlName: 'dl2'}));
+        generateTasks(11, 15).forEach(t => allTasks.push({...t, deadline: dl3, dlName: 'dl3'}));
+
+        let currentPointer = new Date(startDate);
+        let maxRenderDate = new Date(dl3);
+        let taskIdx = 0;
+
+        // タスクを1日ごとの上限まで隙間なく割り当て
+        while (taskIdx < allTasks.length) {
+            const dayOfWeek = currentPointer.getDay();
+            const cap = capacities[dayOfWeek];
+            
+            if (cap > 0) {
+                let assignedToday = 0;
+                const dateStr = formatDateInput(currentPointer);
+                
+                while (assignedToday < cap && taskIdx < allTasks.length) {
+                    const task = allTasks[taskIdx];
+                    const isDelayed = currentPointer > task.deadline;
+                    
+                    if (!schedule[dateStr]) schedule[dateStr] = [];
+                    
+                    schedule[dateStr].push({
+                        name: task.name,
+                        round: task.round,
+                        courseIdx: task.courseIdx,
+                        delayed: isDelayed
+                    });
+                    
+                    if (isDelayed) {
+                        delayedCounts[task.dlName]++;
+                        missedDeadlines[task.dlName] = true;
+                    }
+                    
+                    assignedToday++;
+                    taskIdx++;
+                }
+            }
+            
+            // まだタスクが残っている場合は次の日へ進める
+            if (taskIdx < allTasks.length) {
+                currentPointer.setDate(currentPointer.getDate() + 1);
+            }
+        }
+
+        if (delayedCounts.dl1 > 0) errors.push(`締切1を <b>${delayedCounts.dl1}コマ</b> 分オーバーしています。`);
+        if (delayedCounts.dl2 > 0) errors.push(`締切2を <b>${delayedCounts.dl2}コマ</b> 分オーバーしています。`);
+        if (delayedCounts.dl3 > 0) errors.push(`締切3を <b>${delayedCounts.dl3}コマ</b> 分オーバーしています。`);
+
+        // カレンダーの描画終了日を遅延分まで延長する
+        if (currentPointer > maxRenderDate) {
+            maxRenderDate = new Date(currentPointer);
+        }
+
+        // サマリーカードの表示更新
+        summaryCards.classList.remove('hidden');
+        document.getElementById('statTotal').textContent = `${courseCount * 15} コマ`;
+        document.getElementById('statWeekly').textContent = `${weeklyCapacity} コマ/週`;
+
+        if (errors.length > 0) {
+            document.getElementById('statStatusIcon').textContent = '⚠️';
+            document.getElementById('statStatusIcon').className = 'p-3 bg-amber-50 text-amber-600 rounded-lg text-xl font-bold';
+            document.getElementById('statStatusText').textContent = '調整が必要';
+            
+            showMsg(msgBox, "<b>⚠️ スケジュール調整が必要です</b><br><ul class='list-disc pl-5 mt-1 space-y-1'>" + errors.map(e => `<li>${e}</li>`).join("") + "</ul><span class='text-xs opacity-80 mt-2 block'>曜日の進行コマ数を増やすか、締め切り日を長めに設定してください。</span>", 'error');
+        } else {
+            document.getElementById('statStatusIcon').textContent = '✨';
+            document.getElementById('statStatusIcon').className = 'p-3 bg-emerald-50 text-emerald-600 rounded-lg text-xl font-bold';
+            document.getElementById('statStatusText').textContent = '計画完了';
+
+            showMsg(msgBox, `✨ <b>素晴らしい計画です！</b> 全 ${courseCount * 15} コマの割り当てが完了しました。`, 'success');
+        }
+
+        // 授業凡例の描画
+        renderLegend(courseCount, courseNames);
+
+        // カレンダーの描画
+        renderCalendars(container, schedule, startDate, dl1, dl2, dl3, maxRenderDate, missedDeadlines);
+    }
+
+    function showMsg(el, htmlMsg, type) {
+        el.classList.remove('hidden', 'bg-amber-50', 'text-amber-800', 'border-amber-200', 'bg-emerald-50', 'text-emerald-800', 'border-emerald-200');
+        if (type === 'error') {
+            el.classList.add('bg-amber-50', 'text-amber-800', 'border-amber-200');
+        } else {
+            el.classList.add('bg-emerald-50', 'text-emerald-800', 'border-emerald-200');
+        }
+        el.innerHTML = htmlMsg;
+    }
+
+    function renderLegend(courseCount, courseNames) {
+        const legendContainer = document.getElementById('legendContainer');
+        const legendWrapper = document.getElementById('courseLegend');
+        legendContainer.innerHTML = '';
+        legendWrapper.classList.remove('hidden');
+
+        for (let c = 0; c < courseCount; c++) {
+            const cName = courseNames[c % 26] + (c >= 26 ? Math.floor(c/26) : '');
+            const colorClass = `course-color-${c % 8}`;
+            
+            const badge = document.createElement('span');
+            badge.className = `px-2 py-1 rounded text-xs font-bold border-l-4 ${colorClass}`;
+            badge.textContent = `授業 ${cName}`;
+            legendContainer.appendChild(badge);
+        }
+
+        // 遅延アイコンも追加
+        const delayedBadge = document.createElement('span');
+        delayedBadge.className = `px-2 py-1 rounded text-xs font-bold border-l-4 bg-red-500 text-white border-red-700`;
+        delayedBadge.innerHTML = `⚠️ 遅延（締切オーバー）`;
+        legendContainer.appendChild(delayedBadge);
+    }
+
+    function renderCalendars(container, schedule, startDate, dl1, dl2, dl3, maxRenderDate, missedDeadlines) {
+        const datesToRender = [];
+        let cur = new Date(startDate);
+        const todayStr = formatDateInput(new Date());
+        
+        while (cur <= maxRenderDate) {
+            datesToRender.push(new Date(cur));
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        if (datesToRender.length === 0) return;
+
+        const months = {};
+        datesToRender.forEach(d => {
+            const monthKey = `${d.getFullYear()}年 ${d.getMonth() + 1}月`;
+            if (!months[monthKey]) months[monthKey] = [];
+            months[monthKey].push(d);
+        });
+
+        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+
+        for (const [monthLabel, days] of Object.entries(months)) {
+            const monthEl = document.createElement('div');
+            monthEl.className = "bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200";
+            
+            let html = `<div class="bg-slate-800 text-white font-bold px-5 py-3 text-sm flex justify-between items-center">
+                <span>🗓️ ${monthLabel}</span>
+                <span class="text-xs text-slate-300 font-medium bg-slate-700 px-2 py-0.5 rounded-full">${days.length} 日間</span>
+            </div>`;
+            html += `<div class="calendar-grid">`;
+            
+            dayNames.forEach((name, idx) => {
+                const colorClass = idx === 0 ? 'text-red-500' : (idx === 6 ? 'text-blue-500' : 'text-slate-600');
+                html += `<div class="bg-slate-50 py-2 text-center text-xs font-bold ${colorClass}">${name}</div>`;
+            });
+
+            const firstDayOfWeek = days[0].getDay();
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                html += `<div class="calendar-cell bg-slate-50/50"></div>`;
+            }
+
+            days.forEach(d => {
+                const dateStr = formatDateInput(d);
+                const dayNum = d.getDate();
+                const dayOfWeek = d.getDay();
+                let textColor = "text-slate-700";
+                let dayBgClass = "bg-white";
+                
+                if (dayOfWeek === 0) {
+                    textColor = "text-red-600";
+                    dayBgClass = "bg-red-50/30";
+                } else if (dayOfWeek === 6) {
+                    textColor = "text-blue-600";
+                    dayBgClass = "bg-blue-50/30";
+                }
+
+                let badgesHtml = '';
+                let cellExtraClass = dayBgClass;
+
+                // 今日のハイライト判定
+                if (dateStr === todayStr) {
+                    cellExtraClass = 'today-highlight relative z-10';
+                    badgesHtml += `<div class="event-badge bg-amber-100 text-amber-700 border-amber-300 mb-0.5"><span class="text-[10px]">📍 今日</span></div>`;
+                }
+
+                if (dateStr === formatDateInput(startDate)) {
+                    badgesHtml += `<div class="event-badge bg-start"><span>🚩</span><span>開始日</span></div>`;
+                }
+                if (dateStr === formatDateInput(dl1)) {
+                    const extra = missedDeadlines.dl1 ? 'animate-pulse ring-2 ring-red-500 ring-offset-1 bg-red-100' : '';
+                    badgesHtml += `<div class="event-badge bg-dl1 ${extra}"><span>⏰</span><span>締切 1</span></div>`;
+                    if(missedDeadlines.dl1) cellExtraClass = 'bg-red-50 border border-red-200 relative z-10';
+                }
+                if (dateStr === formatDateInput(dl2)) {
+                    const extra = missedDeadlines.dl2 ? 'animate-pulse ring-2 ring-red-500 ring-offset-1 bg-red-100' : '';
+                    badgesHtml += `<div class="event-badge bg-dl2 ${extra}"><span>⏰</span><span>締切 2</span></div>`;
+                    if(missedDeadlines.dl2) cellExtraClass = 'bg-red-50 border border-red-200 relative z-10';
+                }
+                if (dateStr === formatDateInput(dl3)) {
+                    const extra = missedDeadlines.dl3 ? 'animate-pulse ring-2 ring-red-500 ring-offset-1 bg-red-100' : '';
+                    badgesHtml += `<div class="event-badge bg-dl3 ${extra}"><span>⏰</span><span>締切 3</span></div>`;
+                    if(missedDeadlines.dl3) cellExtraClass = 'bg-red-50 border border-red-200 relative z-10';
+                }
+
+                if (schedule[dateStr]) {
+                    schedule[dateStr].forEach(item => {
+                        if (item.delayed) {
+                            badgesHtml += `
+                                <div class="task-badge bg-red-500 text-white border-red-700 shadow-sm">
+                                    <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <span class="truncate">授業${item.name}-${item.round}回</span>
+                                </div>`;
+                            cellExtraClass = 'bg-red-50/50';
+                        } else {
+                            const colorClass = `course-color-${item.courseIdx}`;
+                            badgesHtml += `
+                                <div class="task-badge ${colorClass}">
+                                    <span class="truncate">授業${item.name}-${item.round}回</span>
+                                </div>`;
+                        }
+                    });
+                }
+
+                html += `
+                    <div class="calendar-cell ${cellExtraClass}">
+                        <span class="date-label ${textColor}">${dayNum}</span>
+                        ${badgesHtml}
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            monthEl.innerHTML = html;
+            container.appendChild(monthEl);
+        }
+    }
+</script>
+</body>
+</html>
