@@ -7,10 +7,6 @@ document.getElementById('courseCount').addEventListener('input', (e) => {
 function saveSettings() {
   const settings = {
     courseCount: document.getElementById('courseCount').value,
-    startDate: document.getElementById('startDate').value,
-    dl1: document.getElementById('dl1').value,
-    dl2: document.getElementById('dl2').value,
-    dl3: document.getElementById('dl3').value,
     caps: [0, 1, 2, 3, 4, 5, 6].map(i => document.getElementById(`cap${i}`).value)
   };
   localStorage.setItem('studyPlannerSettings', JSON.stringify(settings));
@@ -25,10 +21,6 @@ function loadSettings() {
         document.getElementById('courseCount').value = settings.courseCount;
         document.getElementById('totalClassesCount').textContent = settings.courseCount * 15;
       }
-      if (settings.startDate) document.getElementById('startDate').value = settings.startDate;
-      if (settings.dl1) document.getElementById('dl1').value = settings.dl1;
-      if (settings.dl2) document.getElementById('dl2').value = settings.dl2;
-      if (settings.dl3) document.getElementById('dl3').value = settings.dl3;
       if (settings.caps && settings.caps.length === 7) {
         settings.caps.forEach((cap, i) => {
           document.getElementById(`cap${i}`).value = cap;
@@ -40,6 +32,52 @@ function loadSettings() {
   return false;
 }
 
+function setDay(result) {
+  result.forEach(row => {
+    if (row.length >= 2) {
+      const key = row[0].trim();
+      // YYYY/MM/DD を YYYY-MM-DD 形式に変換（HTMLのdate入力欄用）
+      const val = row[1].trim().replace(/\//g, '-'); 
+
+      if (key === 'startDate') {
+        document.getElementById('startDate').value = val;
+      } else if (key === 'd1') {
+        document.getElementById('dl1').value = val;
+      } else if (key === 'd2') {
+        document.getElementById('dl2').value = val;
+      } else if (key === 'd3') {
+        document.getElementById('dl3').value = val;
+      }
+    }
+  });
+
+  // 日付をセットした後にシミュレーターを再実行
+  runSimulation();
+}
+
+function getCSV(){
+    const req = new XMLHttpRequest();
+    req.open("get", "assets/data.csv", true);
+    req.send(null);
+ 
+    req.onload = function(){
+        const result = convertCSVtoArray(req.responseText);
+        setDay(result);
+    }
+}
+
+// 読み込んだCSVデータを二次元配列に変換して返す関数
+function convertCSVtoArray(str){
+    const tmp = str.split("\n");
+    const result = [];
+
+    for(let i = 0; i < tmp.length; ++i){
+        if(tmp[i].trim() === "") continue;
+        result[i] = tmp[i].split(',');
+    }
+    return result;
+}
+
 function setPreset(caps) {
   for (let i = 0; i < 7; i++) {
     document.getElementById(`cap${i}`).value = caps[i];
@@ -49,28 +87,16 @@ function setPreset(caps) {
 function resetDefaults() {
   document.getElementById('courseCount').value = 4;
   document.getElementById('totalClassesCount').textContent = 60;
-  setPreset([0, 2, 2, 2, 2, 2, 4]);
-
-  const today = new Date();
-  document.getElementById('startDate').value = formatDateInput(today);
-
-  const d1 = new Date(today); d1.setDate(d1.getDate() + 28);
-  document.getElementById('dl1').value = formatDateInput(d1);
-
-  const d2 = new Date(today); d2.setDate(d2.getDate() + 56);
-  document.getElementById('dl2').value = formatDateInput(d2);
-
-  const d3 = new Date(today); d3.setDate(d3.getDate() + 84);
-  document.getElementById('dl3').value = formatDateInput(d3);
-
+  setPreset([0, 2, 2, 2, 2, 2, 0]);
   saveSettings();
+  getCSV();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   if (!loadSettings()) {
     resetDefaults();
   }
-  runSimulation(); // 初期描画
+  getCSV();
 });
 
 function formatDateInput(date) {
